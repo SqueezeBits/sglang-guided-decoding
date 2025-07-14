@@ -1712,6 +1712,12 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
 
         global bid
         bid += 1
+
+        # logger.info(f"self.reqs: len {len(self.reqs)}")
+        output_ids_len = []
+        for req in self.reqs:
+            output_ids_len.append(len(req.output_ids))
+
         return ModelWorkerBatch(
             bid=bid,
             forward_mode=self.forward_mode,
@@ -1759,6 +1765,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             ),
             extend_input_logprob_token_ids=self.extend_input_logprob_token_ids,
             launch_done=self.launch_done,
+            output_ids_len=output_ids_len,
         )
 
     def copy(self):
@@ -1854,6 +1861,9 @@ class ModelWorkerBatch:
 
     # Overlap event
     launch_done: Optional[threading.Event] = None
+
+    # output_ids_len
+    output_ids_len: Optional[List[int]] = None # shape: [b], int64
 
 
 @triton.jit
