@@ -14,9 +14,8 @@
 """A tensor parallel worker."""
 
 import logging
-import os
 import threading
-from typing import Optional, Tuple, Union, List
+from typing import Optional, Tuple, Union
 
 import torch
 
@@ -45,12 +44,9 @@ from sglang.srt.model_executor.model_runner import ModelRunner
 from sglang.srt.server_args import ServerArgs
 from sglang.srt.utils import MultiprocessingSerializer, broadcast_pyobj, set_random_seed
 
-# reasoning budget
-REASONING_BUDGET = int(os.getenv("REASONING_BUDGET", -1))
 
 logger = logging.getLogger(__name__)
 
-logger.info(f"REASONING_BUDGET: {REASONING_BUDGET}")
 
 class TpModelWorker:
     """A tensor parallel model worker."""
@@ -225,23 +221,11 @@ class TpModelWorker:
             if skip_sample:
                 next_token_ids = None
             else:
-                if REASONING_BUDGET > 0:
-                    self.apply_reasoning_masking(logits_output.next_token_logits, model_worker_batch.output_ids_len)
 
                 next_token_ids = self.model_runner.sample(
                     logits_output, model_worker_batch
                 )
 
-                # Apply reasoning budget
-                THINK_END_TOKEN = 151668
-                SUPPRESS_TOKENS = [151668, 151645, 151643]  # think_end, eos, stop
-                CONTINUED_TOKEN = 80022 # Hmm
-                
-                for req_idx, output_ids_len in enumerate(model_worker_batch.output_ids_len):
-                    if output_ids_len == REASONING_BUDGET:
-                        next_token_ids[req_idx] = THINK_END_TOKEN
-                    elif output_ids_len < REASONING_BUDGET and next_token_ids[req_idx] in SUPPRESS_TOKENS:
-                        next_token_ids[req_idx] = CONTINUED_TOKEN
 
             return logits_output, next_token_ids, can_run_cuda_graph
         else:
@@ -250,35 +234,6 @@ class TpModelWorker:
                 pp_proxy_tensors=pp_proxy_tensors,
             )
             return pp_proxy_tensors.tensors, None, can_run_cuda_graph
-
-    def apply_reasoning_masking(self, logits, output_ids_lens: List[int]):
-        # Constants
-        THINK_END_TOKEN = 151668
-        SUPPRESS_TOKENS = [151668, 151645, 151643]  # think_end, eos, stop
-
-        # Collect logit indices that need masking
-        under_budget_logit_indices = []
-        at_budget_logit_indices = []
-
-        # not conserned about the speculative decoding
-        for req_idx, output_ids_len in enumerate(output_ids_lens):
-            if output_ids_len < REASONING_BUDGET:
-                under_budget_logit_indices.append(req_idx)
-            elif output_ids_len == REASONING_BUDGET:
-                at_budget_logit_indices.append(req_idx)
-
-        # Apply masks
-        if under_budget_logit_indices:
-            # Use advanced indexing to modify original logits tensor
-            indices = torch.tensor(under_budget_logit_indices, device=logits.device)
-            # Use broadcasting to set all suppress_tokens for all indices
-            logits[indices[:, None], SUPPRESS_TOKENS] = float('-inf')
-
-        if at_budget_logit_indices:
-            logits[at_budget_logit_indices] = float('-inf')
-            logits[at_budget_logit_indices, THINK_END_TOKEN] = 1.0
-
-        return
 
 
     def forward_batch_embedding(self, model_worker_batch: ModelWorkerBatch):
