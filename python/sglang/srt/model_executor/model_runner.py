@@ -1331,6 +1331,15 @@ class ModelRunner:
 
             logger.info(f"Intel AMX attention backend is enabled.")
             return IntelAMXAttnBackend(self)
+        elif self.server_args.attention_backend == "mixed":
+            from sglang.srt.layers.attention.mixed_backend import MixedAttnBackend
+            assert (
+                torch.cuda.get_device_capability()[0] == 8 and not self.use_mla_backend
+            ) or torch.cuda.get_device_capability()[0] == 9, (
+                "Mixed Backend requires SM>=80 and SM<=90. "
+                "Please use `--attention-backend flashinfer`."
+            )
+            return MixedAttnBackend(self)
         else:
             raise ValueError(
                 f"Invalid attention backend: {self.server_args.attention_backend}"
