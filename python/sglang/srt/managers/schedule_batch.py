@@ -37,6 +37,7 @@ import logging
 import threading
 from enum import Enum, auto
 from http import HTTPStatus
+from itertools import chain
 from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -1149,9 +1150,9 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         req_pool_indices_tensor = torch.tensor(req_pool_indices, dtype=torch.int64).to(
             self.device, non_blocking=True
         )
-        input_ids_tensor = torch.tensor(sum(input_ids, []), dtype=torch.int64).to(
-            self.device, non_blocking=True
-        )
+        input_ids_tensor = torch.tensor(
+            list(chain.from_iterable(input_ids)), dtype=torch.int64
+        ).to(self.device, non_blocking=True)
         seq_lens_tensor = torch.tensor(seq_lens, dtype=torch.int64).to(
             self.device, non_blocking=True
         )
@@ -1162,7 +1163,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
         token_type_ids_tensor = None
         if len(token_type_ids) > 0:
             token_type_ids_tensor = torch.tensor(
-                sum(token_type_ids, []), dtype=torch.int64
+                list(chain.from_iterable(token_type_ids)), dtype=torch.int64
             ).to(self.device, non_blocking=True)
 
         extend_lens_tensor = seq_lens_tensor - prefix_lens_tensor
@@ -1695,6 +1696,7 @@ class ScheduleBatch(ScheduleBatchDisaggregationDecodeMixin):
             or global_server_args_dict["attention_backend"] == "cutlass_mla"
             or global_server_args_dict["attention_backend"] == "ascend"
             or global_server_args_dict["enable_two_batch_overlap"]
+            or global_server_args_dict["attention_backend"] == "mixed"
         ):
             seq_lens_cpu = (
                 seq_lens_cpu_cache
